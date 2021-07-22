@@ -37,7 +37,11 @@ from sklearn.feature_extraction.text import CountVectorizer
 # Importing data
 movies = pd.read_csv('resources/data/movies.csv', sep = ',',delimiter=',')
 ratings = pd.read_csv('resources/data/ratings.csv')
-movies.dropna(inplace=True)
+imdb_data = pd.read_csv('../unsupervised_data/unsupervised_movie_data/imdb_data.csv') #'../unsupervised_data/unsupervised_movie_data
+movies_df = imdb_data.merge(movies, left_on='movieId', right_on='movieId')
+movies_df.drop(['runtime','budget','movieId'],axis=1,inplace=True)
+#movies_df.fillna('')
+#movies.dropna(inplace=True)
 
 def data_preprocessing(subset_size):
     """Prepare data for use within Content filtering algorithm.
@@ -53,10 +57,43 @@ def data_preprocessing(subset_size):
         Subset of movies selected for content-based filtering.
 
     """
-    # Split genre data into individual words.
-    movies['keyWords'] = movies['genres'].str.replace('|', ' ')
+    # function for changing column data types to strings for string handling
+    def to_string(df):
+     for col in df.columns:
+         if df[col].dtype in ['int64','float','object']:
+                df[col] = df[col].astype(str)
+     return df
+    # changing all columns to strings
+    df_1 = to_string(movies_df)
+    # joining director names 
+    df_1['director'] = df_1['director'].apply(lambda x: "".join(x.lower() for x in x.split()))
+    # removing pipes, joining title cast and returning first 3 names
+    df_1['title_cast'] = df_1['title_cast'].apply(lambda x: "".join(x.lower() for x in x.split()))
+    df_1['title_cast'] = df_1['title_cast'].map(lambda x: x.split('|')[:3])
+    # removing pipes, joining plot keywords and returning first 5
+    df_1['plot_keywords'] = df_1['plot_keywords'].map(lambda x: x.split('|')[:5])
+    df_1['plot_keywords'] = df_1['plot_keywords'].apply(lambda x: " ".join(x))
+    # Discarding the pipes between the genres 
+    df_1['genres'] = df_1['genres'].map(lambda x: x.lower().split('|'))
+    df_1['genres'] = df_1['genres'].apply(lambda x: " ".join(x))
+    # setting movie titles as index
+    df_1.set_index('title', inplace = True)
+    # creating a new column  consisting of all our movie attributes
+    df_1['KeyWords'] = ''
+    columns = df_1.columns
+    for index, row in df_1.iterrows():
+         words = ''
+         for col in columns:
+             if col not in ['director','plot_keywords','genres']:
+                 words = words + ' '.join(row[col])+ ' '
+             else:
+                 words = words + row[col]+ ' '
+         row['KeyWords'] = words
+    # resetting our index back to default index
+    df_1.reset_index(inplace=True)
+
     # Subset of the data
-    movies_subset = movies[:subset_size]
+    movies_subset = df_1[:subset_size]
     return movies_subset
 
 # !! DO NOT CHANGE THIS FUNCTION SIGNATURE !!
@@ -80,10 +117,10 @@ def content_model(movie_list,top_n=10):
     """
     # Initializing the empty list of recommended movies
     recommended_movies = []
-    data = data_preprocessing(27000)
+    data = data_preprocessing(40000) 
     # Instantiating and generating the count matrix
     count_vec = CountVectorizer()
-    count_matrix = count_vec.fit_transform(data['keyWords'])
+    count_matrix = count_vec.fit_transform(data['KeyWords'])
     indices = pd.Series(data['title'])
     cosine_sim = cosine_similarity(count_matrix, count_matrix)
     # Getting the index of the movie that matches the title
